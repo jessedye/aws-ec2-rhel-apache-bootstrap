@@ -57,8 +57,8 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           setenforce Permissive
-          sed 's|SELINUX=enforcing|SELINUX=permissive|' /etc/sysconfig/selinux > /etc/sysconfig/selinux2
-          mv -f /etc/sysconfig/selinux2 /etc/sysconfig/selinux
+          sed 's|SELINUX=enforcing|SELINUX=permissive|' /etc/selinux/config > /etc/selinux/config2
+          mv -f /etc/selinux/config2 /etc/selinux/config
           mkfs.xfs /dev/xvdh -f
           mkdir -p /www/
           mount /dev/xvdh /www/
