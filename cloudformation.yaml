@@ -1,0 +1,122 @@
+Parameters:
+
+  InstanceType:
+    Description: EC2 Instance Type
+    Type: String
+    Default: t2.micro
+
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: jesse-key
+
+  SSHLocation:
+    Description: The IP address range that can be used to SSH to the EC2 instances
+    Type: String
+    Default: 1.1.1.1/32
+
+  AMI:
+  ##RHEL 8 IMAGE
+    Type: String
+    Default: ami-0b28dfc7adc325ef4
+
+  SubnetID:
+    Type: String
+    Default: subnet-c572f78f
+
+  VPCID:
+    Type: String
+    Default: vpc-700c0208
+
+  AZ:
+    Type: String
+    Default: us-west-2a
+
+Resources:
+
+  Volume:
+    Type: AWS::EC2::Volume
+    Properties:
+      Size: 1
+      AvailabilityZone: !Ref AZ
+      Tags:
+        - Key: Application
+          Value: WebServerData
+
+  MountPoint:
+    Type: AWS::EC2::VolumeAttachment
+    Properties:
+      InstanceId: !Ref EC2Instance
+      VolumeId: !Ref Volume
+      Device: /dev/xvdh
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      UserData: 
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          setenforce Permissive
+          sed 's|SELINUX=enforcing|SELINUX=permissive|' /etc/sysconfig/selinux > /etc/sysconfig/selinux2
+          mv -f /etc/sysconfig/selinux2 /etc/sysconfig/selinux
+          mkfs.xfs /dev/xvdh -f
+          mkdir -p /www/
+          mount /dev/xvdh /www/
+          echo "/dev/xvdh      /www/  xfs    defaults,nofail        0       2" >> /etc/fstab
+          yum install httpd -y
+          sed 's|<Directory "/var/www/html">|<Directory "/www">|' /etc/httpd/conf/httpd.conf > /etc/httpd/conf/httpd.conf2
+          mv -f /etc/httpd/conf/httpd.conf2 /etc/httpd/conf/httpd.conf
+          sed 's|DocumentRoot "/var/www/html"|DocumentRoot "/www"|' /etc/httpd/conf/httpd.conf > /etc/httpd/conf/httpd.conf2
+          mv -f /etc/httpd/conf/httpd.conf2 /etc/httpd/conf/httpd.conf
+          systemctl enable httpd
+          systemctl start httpd
+          echo "Hello AWS World" > /www/index.html
+          systemctl restart httpd
+          reboot
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref SubnetID
+      SecurityGroupIds:
+        - !GetAtt InstanceSecurityGroup.GroupId
+      KeyName: !Ref 'KeyName'
+      ImageId: !Ref 'AMI'
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp2
+            VolumeSize: '10'
+            DeleteOnTermination: 'false'
+            Encrypted: 'true'
+      
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access
+      VpcId: !Ref 'VPCID'
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: !Ref 'SSHLocation'
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+
+  IPAddress:
+    Type: AWS::EC2::EIP
+
+  IPAssoc:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      InstanceId: !Ref 'EC2Instance'
+      EIP: !Ref 'IPAddress'
+
+Outputs:
+
+  InstanceId:
+    Description: InstanceId of the newly created EC2 instance
+    Value: !Ref 'EC2Instance'
+
+  InstanceIPAddress:
+    Description: IP address of the newly created EC2 instance
+    Value: !Ref 'IPAddress'
